@@ -1,0 +1,86 @@
+---
+- name: WatchLog | Create service, that will be write in syslog by condition
+  hosts: nginx
+  become: true
+
+  tasks:
+    - name: Create configuration file
+      copy:
+        dest: "/etc/default/watchlog"
+        content: |
+          # Configuration file for my watchlog service
+          # Place it to /etc/default
+          # File and word in that file that we will be monitor
+          WORD="ALERT"
+          LOG=/var/log/watchlog.log
+        
+    - name: Create file for watch
+      copy:
+        dest: "/var/log/watchlog.log"
+        content: |
+          Zombie in the town!
+          ALERT
+          ALERT
+          ALERT
+
+    - name: Create watching script
+      copy:
+        dest: "/opt/watchlog.sh"
+        content: |
+          #!/bin/bash
+        
+          WORD=$1
+          LOG=$2
+          DATE=`date`
+          
+          if grep $WORD $LOG &> /dev/null
+          then
+          logger "$DATE: I found word, Master!"
+          else
+          exit 0
+          fi
+
+    - name: Ensure script file exists
+      become: true
+      file: 
+        path: "/opt/watchlog.sh"
+        mode: '0755'
+        owner: root
+        group: root
+
+    - name: Create service
+      copy:
+        dest: "/etc/systemd/system/watchlog.service"
+        content: |
+          [Unit]
+          Description=My watchlog service
+          
+          [Service]
+          Type=oneshot
+          EnvironmentFile=/etc/default/watchlog
+          ExecStart=/opt/watchlog.sh $WORD $LOG
+
+    - name: Create timer
+      copy:
+        dest: "/etc/systemd/system/watchlog.timer"
+        content: |
+          [Unit]
+          Description=Run watchlog script every 30 second
+          
+          [Timer]     
+          # Run every 30 second
+          OnUnitActiveSec=30
+          Unit=watchlog.service
+        
+          [Install]
+          WantedBy=multi-user.target
+      notify:
+      - restart timer
+
+  handlers:
+    - name: restart timer
+      systemd:
+        name: watchlog.timer
+        state: restarted
+        enabled: yes
+...

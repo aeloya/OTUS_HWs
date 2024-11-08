@@ -1,0 +1,182 @@
+---
+- name: NGINX | Install and configure NGINX
+  hosts: nginx
+  become: true
+
+  tasks:
+    - name: update
+      apt:
+        update_cache=yes
+
+    - name: NGINX | Install NGINX
+      apt:
+        name: nginx
+        state: latest
+      notify:
+        - restart nginx
+
+    - name: Create service for nginx@
+      copy:
+        dest: "/etc/systemd/system/nginx@.service"
+        content: |
+          # Stop dance for nginx
+          # =======================
+          #
+          # ExecStop sends SIGSTOP (graceful stop) to the nginx process.
+          # If, after 5s (--retry QUIT/5) nginx is still running, systemd takes control
+          # and sends SIGTERM (fast shutdown) to the main process.
+          # After another 5s (TimeoutStopSec=5), and if nginx is alive, systemd sends
+          # SIGKILL to all the remaining processes in the process group (KillMode=mixed).
+          #
+          # nginx signals reference doc here http://nginx.org/en/docs/control.html
+          #
+          [Unit]
+          Description=A high performance web server and a reverse proxy server
+          Documentation=man:nginx(8)
+          After=network.target nss-lookup.target
+          
+          [Service]
+          Type=forking
+          PIDFile=/run/nginx-%I.pid
+          ExecStartPre=/usr/sbin/nginx -t -c /etc/nginx/nginx-%I.conf -q -g 'daemon on; master_process on;'
+          ExecStart=/usr/sbin/nginx -c /etc/nginx/nginx-%I.conf -g 'daemon on; master_process on;'
+          ExecReload=/usr/sbin/nginx -c /etc/nginx/nginx-%I.conf -g 'daemon on; master_process on;' -s reload
+          ExecStop=-/sbin/start-stop-daemon --quiet --stop --retry QUIT/5 --pidfile /run/nginx-%I.pid
+          TimeoutStopSec=5
+          KillMode=mixed
+          
+          [Install]
+          WantedBy=multi-user.target
+          
+    - name: Create first configuration file
+      copy:
+        dest: "/etc/nginx/nginx-first.conf"
+        content: |
+            user www-data;
+            worker_processes auto;
+            pid /run/nginx-first.pid;
+            error_log /var/log/nginx/error.log;
+            include /etc/nginx/modules-enabled/*.conf;
+            
+            events {
+            	worker_connections 768;
+            }
+            
+            http {
+            
+            ##
+            # Basic Settings
+            ##
+            
+            sendfile on;
+            tcp_nopush on;
+            types_hash_max_size 2048;
+            # server_tokens off;
+                     
+            # server_names_hash_bucket_size 64;
+            # server_name_in_redirect off;
+            
+            include /etc/nginx/mime.types;
+            default_type application/octet-stream;
+            server {
+            listen 9001; }
+            
+                    
+            ##
+            # SSL Settings
+            ##
+            
+            ssl_protocols TLSv1 TLSv1.1 TLSv1.2 TLSv1.3; 
+            ssl_prefer_server_ciphers on;
+            
+            ##
+            # Logging Settings
+            ##  
+            
+            access_log /var/log/nginx/access.log;
+                   
+            ##
+            # Gzip Settings
+            ##
+            
+            gzip on;
+                   
+            ##
+            # Virtual Host Configs
+            ##
+                   
+            include /etc/nginx/conf.d/*.conf;
+            #include /etc/nginx/sites-enabled/*;
+            }
+
+    - name: Create second configuration file
+      copy:
+        dest: "/etc/nginx/nginx-second.conf"
+        content: |
+          user www-data;
+          worker_processes auto;
+          pid /run/nginx-second.pid;
+          error_log /var/log/nginx/error.log;
+          include /etc/nginx/modules-enabled/*.conf;
+          
+          events {
+          	worker_connections 768;
+          }
+          
+          http {
+
+          ##
+          # Basic Settings
+          ##
+          
+          sendfile on;
+          tcp_nopush on;
+          types_hash_max_size 2048;
+          # server_tokens off;
+          
+          # server_names_hash_bucket_size 64;
+          # server_name_in_redirect off;
+          
+          include /etc/nginx/mime.types;
+          default_type application/octet-stream;
+          server {
+          listen 9002; }
+          
+                  
+          ##
+          # SSL Settings
+          ##
+          
+          ssl_protocols TLSv1 TLSv1.1 TLSv1.2 TLSv1.3; 
+          ssl_prefer_server_ciphers on;
+          
+          ##
+          # Logging Settings
+          ##
+          
+          access_log /var/log/nginx/access.log;
+                 
+          ##
+          # Gzip Settings
+          ##
+          
+          gzip on;
+                 
+          ##
+          # Virtual Host Configs
+          ##
+                 
+          include /etc/nginx/conf.d/*.conf;
+          #include /etc/nginx/sites-enabled/*;
+          }
+
+    - name: Start service nginx@first, if not started
+      ansible.builtin.service:
+        name: nginx@first
+        state: started
+        
+    - name: Start service nginx@second, if not started
+      ansible.builtin.service:
+        name: nginx@second
+        state: started
+...
